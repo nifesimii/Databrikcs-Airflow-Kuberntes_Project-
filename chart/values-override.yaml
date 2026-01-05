@@ -1,10 +1,12 @@
 executor: "KubernetesExecutor"
+
+# THIS keeps pods alive for debugging
 cleanUpPods: false
 
 images:
   airflow:
     repository: my-dags
-    tag: "20260105110455"
+    tag: "20260103032010" # ← Use this placeholder!
     pullPolicy: Never
 
 scheduler:
@@ -33,19 +35,38 @@ postgresql:
     persistence:
       enabled: false
 
+# NO persistent storage (avoids PVC issue in Kind)
 logs:
   persistence:
     enabled: false
 
+
 dags:
-  persistence:
-    enabled: false
+  gitSync:
+    enabled: true
+
+    # git repo clone url
+    # ssh example: git@github.com:apache/airflow.git
+    # https example: https://github.com/apache/airflow.git
+    repo: https://github.com/nifesimii/Databrikcs-Airflow-Kuberntes_Project-.git
+    branch: feature/demo
+    rev: HEAD
+    # The git revision (branch, tag, or hash) to check out, v4 only
+    ref: main
+    depth: 1
+    # the number of consecutive failures allowed before aborting
+    maxFailures: 0
+    # subpath within the repo where dags are located
+    # should be "" if dags are at repo root
+    subPath: "dags"
+    credentialsSecret: git-credentials
 
 config:
   core:
     load_examples: 'False'
   webserver:
     expose_config: 'True'
+  # THIS also keeps worker pods alive
   kubernetes:
     delete_worker_pods: 'False'
     delete_worker_pods_on_failure: 'False'
