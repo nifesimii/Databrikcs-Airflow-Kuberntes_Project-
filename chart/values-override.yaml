@@ -4,7 +4,7 @@ cleanUpPods: false
 images:
   airflow:
     repository: my-dags
-    tag: "20260104220529"
+    tag: "20260105110455"
     pullPolicy: Never
 
 scheduler:
@@ -40,18 +40,6 @@ logs:
 dags:
   persistence:
     enabled: false
-  gitSync:
-    enabled: true
-    repo: https://github.com/nifesimii/Databrikcs-Airflow-Kuberntes_Project-.git
-    branch: feature/demo
-    rev: HEAD
-    depth: 1
-    maxFailures: 0
-    subPath: "dags"  # Adjust if your DAGs are in a different folder
-    wait: 60  # Check for updates every 60 seconds
-    
-    # Uncomment if private repo
-    # credentialsSecret: git-credentials
 
 config:
   core:
