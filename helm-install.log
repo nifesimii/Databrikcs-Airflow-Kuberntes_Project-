@@ -1,0 +1,3 @@
+level=WARN msg="--wait=false is deprecated (boolean value) and can be replaced by omitting the --wait flag"
+Error: INSTALLATION FAILED: failed post-install: resource not ready, name: airflow-run-airflow-migrations, kind: Job, status: InProgress
+context deadline exceeded
