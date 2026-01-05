@@ -1,0 +1,14 @@
+
+# Kubernetes secrets
+k8s/secrets/*.yaml
+!k8s/secrets/*.yaml.template
+*-secrets.yaml
+git-secrets.yaml
+
+# Environment files
+*.env
+.env*
+
+# Mac files
+.DS_Store
+
