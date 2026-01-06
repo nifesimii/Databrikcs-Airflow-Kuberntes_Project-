@@ -12,3 +12,4 @@ git-secrets.yaml
 # Mac files
 .DS_Store
 
+/tmp

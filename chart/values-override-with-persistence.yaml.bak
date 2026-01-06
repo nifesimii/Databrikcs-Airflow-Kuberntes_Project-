@@ -4,7 +4,7 @@ cleanUpPods: false
 images:
   airflow:
     repository: my-dags
-    tag: "20260106073641"
+    tag: "20260106081226"
     pullPolicy: Never
 
 scheduler:
@@ -35,7 +35,9 @@ postgresql:
 
 logs:
   persistence:
-    enabled: false
+    enabled: true  # Fixed the typo and enabled persistence since you're using PVC
+    storageClassName: manual
+    existingClaim: airflow-logs-pvc
 
 dags:
   persistence:
@@ -43,7 +45,7 @@ dags:
   gitSync:
     enabled: true
     repo: https://github.com/nifesimii/Databrikcs-Airflow-Kuberntes_Project-.git
-    branch: master    # ADD THIS LINE
+    branch: master
     ref: master
     depth: 1
     subPath: "dags"
