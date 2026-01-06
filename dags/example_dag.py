@@ -25,7 +25,7 @@ with DAG(
     def goodbye_world():
         time.sleep(5)
         print("Goodbye world, from Airflow!")
-        return "Goodbye completed"
+        return "Goodbye completed on route and stuff "
     
     # Chain the tasks
     hello_world() >> goodbye_world()

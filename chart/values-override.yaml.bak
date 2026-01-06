@@ -4,7 +4,7 @@ cleanUpPods: false
 images:
   airflow:
     repository: my-dags
-    tag: "20260106024211"
+    tag: "20260105195921"
     pullPolicy: Never
 
 scheduler:
@@ -43,7 +43,6 @@ dags:
   gitSync:
     enabled: true
     repo: https://github.com/nifesimii/Databrikcs-Airflow-Kuberntes_Project-.git
-    branch: master    # ADD THIS LINE
     ref: master
     depth: 1
     subPath: "dags"

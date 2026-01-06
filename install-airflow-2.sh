@@ -43,71 +43,27 @@ echo -e "${GREEN}✓ Airflow image: ${IMAGE_NAME}:${IMAGE_TAG}${NC}"
 echo $IMAGE_TAG > .airflow-image-tag
 echo -e "${CYAN}  Saved image tag to .airflow-image-tag${NC}"
 
+# UPDATE VALUES FILE
+echo -e "\n${YELLOW}━━━ STEP 3: Update Airflow Image Tag ━━━${NC}"
+# Only update the Airflow image tag (first occurrence under 'images:' section)
+# This avoids changing the PostgreSQL tag later in the file
+sed -i.bak "/images:/,/scheduler:/ s/tag: \"[^\"]*\"/tag: \"${IMAGE_TAG}\"/" chart/values-override.yaml
+
+# Verify the update worked
+UPDATED_TAG=$(grep -A 5 "images:" chart/values-override.yaml | grep "tag:" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+if [ "$UPDATED_TAG" = "$IMAGE_TAG" ]; then
+    echo "  Airflow image tag: ${IMAGE_TAG}"
+    echo -e "${GREEN}✓ Values file updated (Airflow only, PostgreSQL unchanged)${NC}"
+else
+    echo -e "${RED}❌ Failed to update Airflow image tag${NC}"
+    exit 1
+fi
+
 # LOAD POSTGRESQL
-echo -e "\n${YELLOW}━━━ STEP 3: Load PostgreSQL ━━━${NC}"
+echo -e "\n${YELLOW}━━━ STEP 4: Load PostgreSQL ━━━${NC}"
 docker pull ${POSTGRES_IMAGE} 
 kind load docker-image ${POSTGRES_IMAGE} --name kind
 echo -e "${GREEN}✓ PostgreSQL loaded${NC}"
-
-# GENERATE VALUES FILE
-echo -e "\n${YELLOW}━━━ STEP 4: Generate Values File ━━━${NC}"
-
-cat > chart/values-override.yaml << EOF
-executor: "KubernetesExecutor"
-cleanUpPods: false
-
-images:
-  airflow:
-    repository: my-dags
-    tag: "${IMAGE_TAG}"
-    pullPolicy: Never
-
-scheduler:
-  replicas: 1
-
-triggerer:
-  replicas: 1
-
-workers:
-  replicas: 0
-
-redis:
-  enabled: false
-
-postgresql:
-  enabled: true
-  image:
-    registry: docker.io
-    repository: bitnamilegacy/postgresql
-    tag: "14.10.0"
-    pullPolicy: Never
-  auth:
-    enablePostgresUser: true
-    postgresPassword: postgres
-  primary:
-    persistence:
-      enabled: false
-
-logs:
-  persistence:
-    enabled: false
-
-dags:
-  persistence:
-    enabled: false
-
-config:
-  core:
-    load_examples: 'False'
-  webserver:
-    expose_config: 'True'
-  kubernetes:
-    delete_worker_pods: 'False'
-    delete_worker_pods_on_failure: 'False'
-EOF
-
-echo "  Image tag: ${IMAGE_TAG}"
-echo -e "${GREEN}✓ Values file generated${NC}"
 
 # SETUP HELM
 echo -e "\n${YELLOW}━━━ STEP 5: Setup Helm ━━━${NC}"
@@ -139,6 +95,7 @@ helm install airflow apache-airflow/airflow \
   --set triggerer.waitForMigrations.enabled=false \
   --set dagProcessor.waitForMigrations.enabled=false \
   --set workers.waitForMigrations.enabled=false \
+  --set dags.gitSync.ref=master \
   --timeout 5m
 
 echo -e "${GREEN}✓ Helm chart installed${NC}"
@@ -187,7 +144,7 @@ echo -e "${GREEN}✓ Session table created${NC}"
 
 
 # Force pod retention settings
-echo -e "\n${YELLOW}━━━ Configuring Pod Retention ━━━${NC}"
+echo -e "\n${YELLOW}━━━   STEP 11: Configuring Pod Retention  ━━━${NC}"
 kubectl set env deployment/airflow-scheduler -n ${NAMESPACE} \
   AIRFLOW__KUBERNETES_EXECUTOR__DELETE_WORKER_PODS=False \
   AIRFLOW__KUBERNETES_EXECUTOR__DELETE_WORKER_PODS_ON_FAILURE=False
@@ -196,7 +153,7 @@ kubectl rollout status deployment/airflow-scheduler -n ${NAMESPACE}
 echo -e "${GREEN}✓ Pod retention configured${NC}"
 
 # Verify
-echo -e "\n${YELLOW}━━━ Verifying Configuration ━━━${NC}"
+echo -e "\n${YELLOW}━━━  STEP 12: Verifying Configuration ━━━${NC}"
 sleep 5
 DELETE_PODS=$(kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- \
   airflow config get-value kubernetes_executor delete_worker_pods 2>/dev/null)
@@ -204,7 +161,7 @@ echo "  delete_worker_pods: ${DELETE_PODS}"
 
 
 # WAIT FOR COMPONENTS
-echo -e "\n${YELLOW}━━━ STEP 11: Wait for Airflow Components ━━━${NC}"
+echo -e "\n${YELLOW}━━━ STEP 13: Wait for Airflow Components ━━━${NC}"
 sleep 60
 
 
@@ -219,7 +176,7 @@ for comp in "${COMPONENTS[@]}"; do
 done
 
 # CLEANUP FAILED PODS
-echo -e "\n${YELLOW}━━━ STEP 12: Cleanup Failed Pods ━━━${NC}"
+echo -e "\n${YELLOW}━━━ STEP 14: Cleanup Failed Pods ━━━${NC}"
 kubectl delete pod -n ${NAMESPACE} --field-selector=status.phase=Failed 2>/dev/null || true
 kubectl delete pod -n ${NAMESPACE} --field-selector=status.phase=Error 2>/dev/null || true
 echo -e "${GREEN}✓ Cleanup complete${NC}"
