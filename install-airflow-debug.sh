@@ -228,6 +228,10 @@ for comp in "${COMPONENTS[@]}"; do
   fi
 done
 
+
+
+#Yeal lets go 
+
 # FINAL STATUS
 echo -e "\n${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║         ✅ AIRFLOW 3.0.2 INSTALLATION COMPLETE! ✅        ║${NC}"
