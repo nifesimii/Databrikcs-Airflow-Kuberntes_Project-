@@ -4,7 +4,7 @@ cleanUpPods: false
 images:
   airflow:
     repository: my-dags
-    tag: "20260106081226"
+    tag: "20260106092458"
     pullPolicy: Never
 
 scheduler:
