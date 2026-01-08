@@ -39,71 +39,31 @@ docker build -t $IMAGE_NAME:$IMAGE_TAG -f cicd/Dockerfile .
 kind load docker-image $IMAGE_NAME:$IMAGE_TAG --name kind
 echo -e "${GREEN}✓ Airflow image: ${IMAGE_NAME}:${IMAGE_TAG}${NC}"
 
+# Save image tag for upgrade script
+echo $IMAGE_TAG > .airflow-image-tag
+echo -e "${CYAN}  Saved image tag to .airflow-image-tag${NC}"
+
+# UPDATE VALUES FILE
+echo -e "\n${YELLOW}━━━ STEP 3: Update Airflow Image Tag ━━━${NC}"
+# Only update the Airflow image tag (first occurrence under 'images:' section)
+# This avoids changing the PostgreSQL tag later in the file
+sed -i.bak "/images:/,/scheduler:/ s/tag: \"[^\"]*\"/tag: \"${IMAGE_TAG}\"/" chart/values-override.yaml
+
+# Verify the update worked
+UPDATED_TAG=$(grep -A 5 "images:" chart/values-override.yaml | grep "tag:" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+if [ "$UPDATED_TAG" = "$IMAGE_TAG" ]; then
+    echo "  Airflow image tag: ${IMAGE_TAG}"
+    echo -e "${GREEN}✓ Values file updated (Airflow only, PostgreSQL unchanged)${NC}"
+else
+    echo -e "${RED}❌ Failed to update Airflow image tag${NC}"
+    exit 1
+fi
+
 # LOAD POSTGRESQL
-echo -e "\n${YELLOW}━━━ STEP 3: Load PostgreSQL ━━━${NC}"
+echo -e "\n${YELLOW}━━━ STEP 4: Load PostgreSQL ━━━${NC}"
 docker pull ${POSTGRES_IMAGE} 
 kind load docker-image ${POSTGRES_IMAGE} --name kind
 echo -e "${GREEN}✓ PostgreSQL loaded${NC}"
-
-# GENERATE VALUES FILE
-echo -e "\n${YELLOW}━━━ STEP 4: Generate Values File ━━━${NC}"
-
-cat > chart/values-override.yaml << EOF
-executor: "KubernetesExecutor"
-cleanUpPods: false
-
-images:
-  airflow:
-    repository: my-dags
-    tag: "${IMAGE_TAG}"
-    pullPolicy: Never
-
-scheduler:
-  replicas: 1
-
-triggerer:
-  replicas: 1
-
-workers:
-  replicas: 0
-
-redis:
-  enabled: false
-
-postgresql:
-  enabled: true
-  image:
-    registry: docker.io
-    repository: bitnamilegacy/postgresql
-    tag: "14.10.0"
-    pullPolicy: Never
-  auth:
-    enablePostgresUser: true
-    postgresPassword: postgres
-  primary:
-    persistence:
-      enabled: false
-
-logs:
-  persistence:
-    enabled: false
-
-dags:
-  persistence:
-    enabled: false
-
-config:
-  core:
-    load_examples: 'False'
-  webserver:
-    expose_config: 'True'
-  kubernetes:
-    delete_worker_pods: 'False'
-    delete_worker_pods_on_failure: 'False'
-EOF
-
-echo "  Image tag: ${IMAGE_TAG}"
-echo -e "${GREEN}✓ Values file generated${NC}"
 
 # SETUP HELM
 echo -e "\n${YELLOW}━━━ STEP 5: Setup Helm ━━━${NC}"
@@ -115,6 +75,10 @@ echo -e "${GREEN}✓ Helm ready${NC}"
 echo -e "\n${YELLOW}━━━ STEP 6: Create Namespace ━━━${NC}"
 kubectl create namespace ${NAMESPACE}
 echo -e "${GREEN}✓ Namespace created${NC}"
+
+
+#Apply kubernetes secrets
+kubectl apply -f k8s/secrets/git-secrets.yaml
 
 # INSTALL AIRFLOW
 echo -e "\n${YELLOW}━━━ STEP 7: Install Airflow ━━━${NC}"
@@ -131,6 +95,7 @@ helm install airflow apache-airflow/airflow \
   --set triggerer.waitForMigrations.enabled=false \
   --set dagProcessor.waitForMigrations.enabled=false \
   --set workers.waitForMigrations.enabled=false \
+  --set dags.gitSync.ref=master \
   --timeout 5m
 
 echo -e "${GREEN}✓ Helm chart installed${NC}"
@@ -177,9 +142,28 @@ CREATE TABLE IF NOT EXISTS session (
 " > /dev/null 2>&1
 echo -e "${GREEN}✓ Session table created${NC}"
 
+
+# Force pod retention settings
+echo -e "\n${YELLOW}━━━   STEP 11: Configuring Pod Retention  ━━━${NC}"
+kubectl set env deployment/airflow-scheduler -n ${NAMESPACE} \
+  AIRFLOW__KUBERNETES_EXECUTOR__DELETE_WORKER_PODS=False \
+  AIRFLOW__KUBERNETES_EXECUTOR__DELETE_WORKER_PODS_ON_FAILURE=False
+
+kubectl rollout status deployment/airflow-scheduler -n ${NAMESPACE}
+echo -e "${GREEN}✓ Pod retention configured${NC}"
+
+# Verify
+echo -e "\n${YELLOW}━━━  STEP 12: Verifying Configuration ━━━${NC}"
+sleep 5
+DELETE_PODS=$(kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- \
+  airflow config get-value kubernetes_executor delete_worker_pods 2>/dev/null)
+echo "  delete_worker_pods: ${DELETE_PODS}"
+
+
 # WAIT FOR COMPONENTS
-echo -e "\n${YELLOW}━━━ STEP 11: Wait for Airflow Components ━━━${NC}"
+echo -e "\n${YELLOW}━━━ STEP 13: Wait for Airflow Components ━━━${NC}"
 sleep 60
+
 
 COMPONENTS=("scheduler" "api-server" "triggerer" "dag-processor")
 for comp in "${COMPONENTS[@]}"; do
@@ -192,7 +176,7 @@ for comp in "${COMPONENTS[@]}"; do
 done
 
 # CLEANUP FAILED PODS
-echo -e "\n${YELLOW}━━━ STEP 12: Cleanup Failed Pods ━━━${NC}"
+echo -e "\n${YELLOW}━━━ STEP 14: Cleanup Failed Pods ━━━${NC}"
 kubectl delete pod -n ${NAMESPACE} --field-selector=status.phase=Failed 2>/dev/null || true
 kubectl delete pod -n ${NAMESPACE} --field-selector=status.phase=Error 2>/dev/null || true
 echo -e "${GREEN}✓ Cleanup complete${NC}"
@@ -214,10 +198,10 @@ echo -e "   ${GREEN}kubectl port-forward -n airflow svc/airflow-api-server 8080:
 
 echo -e "\n${MAGENTA}2. Browser:${NC} ${GREEN}http://localhost:8080${NC}"
 echo -e "${MAGENTA}3. Login:${NC} ${GREEN}admin${NC} / ${GREEN}admin${NC}"
-
 echo -e "\n${BLUE}📝 USEFUL COMMANDS:${NC}"
 echo "   AWS Conn: kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- airflow connections add aws_conn --conn-type aws --conn-extra '{\"region_name\":\"us-east-1\"}'"
 echo "   Trigger:  kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- airflow dags trigger produce_data_asset"
 echo "   Logs:     kubectl logs -n airflow -l component=scheduler -c scheduler -f"
 
+echo -e "\n${YELLOW}💡 TIP: Use ./upgrade-dags.sh to quickly rebuild and deploy DAG changes${NC}"
 echo -e "\n${GREEN}🎉 Happy orchestrating! 🎉${NC}"

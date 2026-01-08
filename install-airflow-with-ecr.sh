@@ -17,6 +17,10 @@ IMAGE_TAG=$(date +%Y%m%d%H%M%S)
 POSTGRES_IMAGE="bitnamilegacy/postgresql:14.10.0"
 NAMESPACE="airflow"
 POSTGRES_PASSWORD="postgres"
+RELEASE_NAME="airflow"
+ECR_REGISTRY="032517660248.dkr.ecr.us-east-1.amazonaws.com"
+ECR_REPO="my-dags"
+REGION="us-east-1"
 
 clear
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
@@ -30,14 +34,27 @@ echo -e "\n${YELLOW}━━━ STEP 1: Cleanup ━━━${NC}"
 helm uninstall airflow -n ${NAMESPACE} 2>/dev/null || true
 kubectl delete namespace ${NAMESPACE} 2>/dev/null || true
 kind delete cluster --name kind 2>/dev/null || true
-kind create cluster --name kind --image kindest/node:v1.29.4
+kind create cluster --name kind --image kindest/node:v1.29.4 --config k8s/clusters/kind-clusters.yaml
 echo -e "${GREEN}✓ Clean environment${NC}"
 
-# BUILD IMAGE
-echo -e "\n${YELLOW}━━━ STEP 2: Build Airflow Image ━━━${NC}"
-docker build -t $IMAGE_NAME:$IMAGE_TAG -f cicd/Dockerfile . 
-kind load docker-image $IMAGE_NAME:$IMAGE_TAG --name kind
-echo -e "${GREEN}✓ Airflow image: ${IMAGE_NAME}:${IMAGE_TAG}${NC}"
+
+# Authenticate with ECR
+aws ecr get-login-password --region ${REGION} \
+    | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+
+# Get the latest image tag from ECR
+export IMAGE_TAG=$(aws ecr list-images --repository-name my-dags --region us-east-1 --query 'imageIds[*].imageTag' --output text | tr '\t' '\n' | sort -r | head -n 1)
+
+
+# Load the image into kind
+docker pull $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
+kind load docker-image $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
+
+# # BUILD IMAGE
+# echo -e "\n${YELLOW}━━━ STEP 2: Build Airflow Image ━━━${NC}"
+# docker build -t $IMAGE_NAME:$IMAGE_TAG -f cicd/Dockerfile . 
+# kind load docker-image $IMAGE_NAME:$IMAGE_TAG --name kind
+# echo -e "${GREEN}✓ Airflow image: ${IMAGE_NAME}:${IMAGE_TAG}${NC}"
 
 # Save image tag for upgrade script
 echo $IMAGE_TAG > .airflow-image-tag
@@ -47,10 +64,10 @@ echo -e "${CYAN}  Saved image tag to .airflow-image-tag${NC}"
 echo -e "\n${YELLOW}━━━ STEP 3: Update Airflow Image Tag ━━━${NC}"
 # Only update the Airflow image tag (first occurrence under 'images:' section)
 # This avoids changing the PostgreSQL tag later in the file
-sed -i.bak "/images:/,/scheduler:/ s/tag: \"[^\"]*\"/tag: \"${IMAGE_TAG}\"/" chart/values-override.yaml
+sed -i.bak "/images:/,/scheduler:/ s/tag: \"[^\"]*\"/tag: \"${IMAGE_TAG}\"/" chart/values-override-with-persistence.yaml
 
 # Verify the update worked
-UPDATED_TAG=$(grep -A 5 "images:" chart/values-override.yaml | grep "tag:" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+UPDATED_TAG=$(grep -A 5 "images:" chart/values-override-with-persistence.yaml | grep "tag:" | head -1 | sed 's/.*"\(.*\)".*/\1/')
 if [ "$UPDATED_TAG" = "$IMAGE_TAG" ]; then
     echo "  Airflow image tag: ${IMAGE_TAG}"
     echo -e "${GREEN}✓ Values file updated (Airflow only, PostgreSQL unchanged)${NC}"
@@ -71,6 +88,8 @@ helm repo add apache-airflow https://airflow.apache.org 2>/dev/null || true
 helm repo update > /dev/null 2>&1
 echo -e "${GREEN}✓ Helm ready${NC}"
 
+
+
 # CREATE NAMESPACE
 echo -e "\n${YELLOW}━━━ STEP 6: Create Namespace ━━━${NC}"
 kubectl create namespace ${NAMESPACE}
@@ -80,12 +99,21 @@ echo -e "${GREEN}✓ Namespace created${NC}"
 #Apply kubernetes secrets
 kubectl apply -f k8s/secrets/git-secrets.yaml
 
+#Apply kubernetes persistent volume
+kubectl apply -f k8s/volumes/airflow-logs-pv.yaml
+
+#Apply kubernetes persistent volume claim
+kubectl apply -f k8s/volumes/airflow-logs-pvc.yaml
+
+
 # INSTALL AIRFLOW
 echo -e "\n${YELLOW}━━━ STEP 7: Install Airflow ━━━${NC}"
 helm install airflow apache-airflow/airflow \
   --version ${HELM_CHART_VERSION} \
   --namespace ${NAMESPACE} \
-  -f chart/values-override.yaml \
+  -f chart/values-override-with-persistence.yaml \
+  --set-string images.airflow.repository=${ECR_REGISTRY}/${ECR_REPO} \
+  --set-string images.airflow.tag="${IMAGE_TAG}" \
   --set migrateDatabaseJob.useHelmHooks=false \
   --set migrateDatabaseJob.enabled=false \
   --set createUserJob.useHelmHooks=false \
@@ -108,12 +136,14 @@ kubectl wait --for=condition=ready pod \
   --timeout=300s
 echo -e "${GREEN}✓ PostgreSQL ready${NC}"
 
+
+
 # RUN MIGRATION
 echo -e "\n${YELLOW}━━━ STEP 9: Run Database Migration ━━━${NC}"
 kubectl delete pod -n ${NAMESPACE} airflow-migration 2>/dev/null || true
 kubectl run airflow-migration \
   --namespace=${NAMESPACE} \
-  --image=${IMAGE_NAME}:${IMAGE_TAG} \
+  --image=${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG} \
   --image-pull-policy=Never \
   --restart=Never \
   --env="AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:${POSTGRES_PASSWORD}@airflow-postgresql:5432/postgres" \
