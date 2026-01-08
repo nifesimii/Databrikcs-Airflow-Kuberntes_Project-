@@ -64,7 +64,10 @@ This project implements a **production-grade data orchestration platform** that 
    
 3. DATABRICKS PROCESSING
    Workflow executes → Bronze → Silver → Gold transformations
-   ![Databricks-Workflows](diagrams/Databricks Workflow.png)
+   ![Databricks-Workflows](diagrams/Databricks-Workflow.png)
+
+
+
 
 ```
 
