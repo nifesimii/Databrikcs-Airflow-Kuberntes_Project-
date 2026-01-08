@@ -172,7 +172,6 @@ kubectl port-forward -n airflow svc/airflow-api-server 8080:8080
 **Purpose**: Trigger downstream data processing workflows
 
 **Schedule**: Asset-based `(posts_asset & users_asset)` - Triggered when both assets are updated
-![Databricks-Workflows](<diagrams/Databricks Workflow.png>)
 
 **Process**:
 1. Waits for both `posts_asset` and `users_asset` to be updated
