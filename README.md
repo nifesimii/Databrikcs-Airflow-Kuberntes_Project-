@@ -58,18 +58,16 @@ This project implements a **production-grade data orchestration platform** that 
 ```
 1. DATA EXTRACTION (produce_data_asset DAG)
    Archive.org → Extract XML → Upload to S3 → Create Assets
-   
+```
+```
 2. ASSET-BASED TRIGGERING (Airflow 3.0 Feature)
    Both assets updated → trigger_databricks_workflow_dag scheduled
-   
+```
+```   
 3. DATABRICKS PROCESSING
    Workflow executes → Bronze → Silver → Gold transformations
-   ![Databricks-Workflows](diagrams/Databricks-Workflow.png)
-
-
-
-
 ```
+![Databricks-Workflows](diagrams/Databricks-Workflow.png)
 
 For detailed architecture documentation, see [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md).
 
