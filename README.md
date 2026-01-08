@@ -8,6 +8,9 @@
 
 This project implements a **production-grade data orchestration platform** that orchestrates end-to-end data pipelines from external sources (Stack Exchange archives) through cloud storage (AWS S3) to data processing (Databricks). The architecture leverages Airflow 3.0's cutting-edge **asset-based scheduling** features, demonstrating a mature understanding of modern data engineering patterns.
 
+![Databricks-Workflows](diagrams/Airflow3.0-Dags.png) 
+
+
 **Key Strengths:**
 - ✅ **Modern Tech Stack**: Airflow 3.0.2 with Kubernetes Executor shows awareness of latest platform capabilities
 - ✅ **Event-Driven Architecture**: Asset-based scheduling ensures data availability before downstream processing
@@ -59,10 +62,14 @@ This project implements a **production-grade data orchestration platform** that 
 1. DATA EXTRACTION (produce_data_asset DAG)
    Archive.org → Extract XML → Upload to S3 → Create Assets
 ```
+![Databricks-Workflows](diagrams/produce-data-asset.png)
+
 ```
 2. ASSET-BASED TRIGGERING (Airflow 3.0 Feature)
    Both assets updated → trigger_databricks_workflow_dag scheduled
 ```
+![Databricks-Workflows](diagrams/run-databricks-workflow.png)
+
 ```   
 3. DATABRICKS PROCESSING
    Workflow executes → Bronze → Silver → Gold transformations
