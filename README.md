@@ -357,6 +357,7 @@ aws ecr get-login-password --region us-east-1 | \
 
 docker push 032517660248.dkr.ecr.us-east-1.amazonaws.com/my-dags:latest
 ```
+![Docker image on Ecr](Private-ecr-image.png)
 
 ---
 
